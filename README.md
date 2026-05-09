@@ -24,6 +24,11 @@ You upload a PDF CV. Gemini reads it and returns:
 - CSS with glassmorphism
 - Deployed on Vercel
 
+## Architecture
+- Frontend: React (Vite) — deployed on Vercel
+- Backend: Node.js + Express — deployed on Render
+- The Gemini API call happens server-side so the API key is never exposed to the browser
+
 ## How It Works
 
 The CV is read client-side using the FileReader API and converted to base64. That base64 data is sent directly to the Gemini API alongside a structured prompt instructing the model to return JSON only. The response is parsed and rendered into the feedback UI.

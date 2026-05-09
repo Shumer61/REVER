@@ -1,7 +1,5 @@
 import { useRef } from 'react'
 
-const GEMINI_KEY = import.meta.env.VITE_GEMINI_KEY
-
 function UploadSection({ setFeedback, setLoading, setError, setFileName, loading }) {
     const inputRef = useRef()
 
@@ -31,40 +29,14 @@ function UploadSection({ setFeedback, setLoading, setError, setFileName, loading
         try {
             const base64 = await toBase64(file)
 
-            const prompt = `You are a professional CV reviewer with 10 years of experience in recruitment across tech and fintech. 
-            
-Review this CV thoroughly and respond ONLY with a valid JSON object in this exact format, no extra text or markdown:
-{
-  "score": 7,
-  "summary": "One sentence overall assessment",
-  "strengths": ["strength 1", "strength 2", "strength 3"],
-  "weaknesses": ["weakness 1", "weakness 2", "weakness 3"],
-  "improvements": ["specific improvement 1", "specific improvement 2", "specific improvement 3"],
-  "keywords_missing": ["keyword 1", "keyword 2"],
-  "ats_score": 6,
-  "verdict": "One sentence hiring recommendation"
-}`
-
-            const response = await fetch(
-                `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_KEY}`,
-                {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        contents: [{
-                            parts: [
-                                {
-                                    inline_data: {
-                                        mime_type: 'application/pdf',
-                                        data: base64
-                                    }
-                                },
-                                { text: prompt }
-                            ]
-                        }]
-                    })
-                }
-            )
+            const response = await fetch(`${import.meta.env.VITE_API_URL}/review`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    base64,
+                    mimeType: file.type
+                })
+            })
 
             if(response.status === 429) {
                 setError('Service busy — please try again in a moment.')
@@ -78,17 +50,7 @@ Review this CV thoroughly and respond ONLY with a valid JSON object in this exac
                 return
             }
 
-            const data = await response.json()
-            const raw = data.candidates?.[0]?.content?.parts?.[0]?.text
-
-            if(!raw) {
-                setError('No response received. Please try again.')
-                setLoading(false)
-                return
-            }
-
-            const clean = raw.replace(/```json|```/g, '').trim()
-            const parsed = JSON.parse(clean)
+            const parsed = await response.json()
             setFeedback(parsed)
 
         } catch(err) {

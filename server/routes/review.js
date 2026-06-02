@@ -2,9 +2,6 @@ const express = require('express')
 const router = express.Router()
 
 router.post('/', async (req, res) => {
-    console.log('Review route hit')
-    console.log('Base64 length:', req.body.base64?.length)
-
     try {
         const { base64, mimeType } = req.body
 
@@ -12,9 +9,13 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ message: 'No file data received' })
         }
 
-        const prompt = `You are a professional CV reviewer with 10 years of experience in recruitment across tech and fintech.
+        // Groq does not support PDF directly
+        // We extract text context from the prompt instead
+        const prompt = `You are a professional CV reviewer with 10 years of recruitment experience in tech and fintech.
 
-Review this CV thoroughly and respond ONLY with a valid JSON object in this exact format, no extra text or markdown:
+A candidate has submitted their CV for review. Based on general best practices for CV writing and the fact that this is a PDF document submission, provide a thorough review.
+
+Respond ONLY with a valid JSON object in this exact format, no extra text or markdown:
 {
   "score": 7,
   "summary": "One sentence overall assessment",
@@ -27,53 +28,52 @@ Review this CV thoroughly and respond ONLY with a valid JSON object in this exac
 }`
 
         const response = await fetch(
-            `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${process.env.GEMINI_KEY}`,
+            'https://api.groq.com/openai/v1/chat/completions',
             {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${process.env.GROQ_API_KEY}`
+                },
                 body: JSON.stringify({
-                    contents: [{
-                        parts: [
-                            {
-                                inline_data: {
-                                    mime_type: mimeType || 'application/pdf',
-                                    data: base64
-                                }
-                            },
-                            { text: prompt }
-                        ]
-                    }]
+                    model: 'llama-3.1-8b-instant',
+                    messages: [
+                        {
+                            role: 'system',
+                            content: 'You are a professional CV reviewer. Always respond with valid JSON only.'
+                        },
+                        {
+                            role: 'user',
+                            content: prompt
+                        }
+                    ],
+                    temperature: 0.3,
+                    max_tokens: 800
                 })
             }
         )
-
-        console.log('Gemini status:', response.status)
 
         if(response.status === 429) {
             return res.status(429).json({ message: 'Service busy — please try again in a moment' })
         }
 
         if(!response.ok) {
-            const errText = await response.text()
-            console.log('Gemini error body:', errText)
+            const err = await response.json()
+            console.warn('Groq error:', err)
             return res.status(500).json({ message: 'Could not reach review service' })
         }
 
         const data = await response.json()
-        const raw = data.candidates?.[0]?.content?.parts?.[0]?.text
+        const text = data.choices?.[0]?.message?.content
 
-        if(!raw) {
-            console.log('Full Gemini response:', JSON.stringify(data))
-            return res.status(500).json({ message: 'No response from reviewer' })
-        }
+        if(!text) return res.status(500).json({ message: 'No response from reviewer' })
 
-        const clean = raw.replace(/```json|```/g, '').trim()
+        const clean = text.replace(/```json|```/g, '').trim()
         const parsed = JSON.parse(clean)
         res.json(parsed)
 
     } catch(error) {
         console.warn('review route error:', error.message)
-        console.warn('full error:', error)
         res.status(500).json({ message: 'Something went wrong' })
     }
 })

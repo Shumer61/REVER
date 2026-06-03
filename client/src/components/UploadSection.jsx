@@ -45,13 +45,20 @@ function UploadSection({ setFeedback, setLoading, setError, setFileName, loading
             }
 
             if(!response.ok) {
-                setError('Could not reach the review service.')
+                const errorData = await response.json().catch(() => ({}))
+                setError(errorData.message || 'Could not reach the review service.')
                 setLoading(false)
                 return
             }
 
             const parsed = await response.json()
             setFeedback(parsed)
+            
+            // Show warning if PDF had poor text extraction
+            if (parsed._warning) {
+                setError(parsed._warning)
+                setTimeout(() => setError(''), 3000)
+            }
 
         } catch(err) {
             setError('Something went wrong. Please try again.')

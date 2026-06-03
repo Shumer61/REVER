@@ -1,5 +1,6 @@
 const express = require('express')
 const router = express.Router()
+const pdf = require('pdf-parse')
 
 router.post('/', async (req, res) => {
     try {
@@ -9,24 +10,56 @@ router.post('/', async (req, res) => {
             return res.status(400).json({ message: 'No file data received' })
         }
 
-        // Groq does not support PDF directly
-        // We extract text context from the prompt instead
+        // Step 1: Convert base64 to PDF buffer and extract text
+        let cvText = ''
+        try {
+            const pdfBuffer = Buffer.from(base64, 'base64')
+            const pdfData = await pdf(pdfBuffer)
+            cvText = pdfData.text
+            
+            // Check if we got meaningful text
+            if (!cvText || cvText.trim().length < 50) {
+                console.warn('PDF text extraction returned very little content. Length:', cvText?.length)
+                // Continue anyway, but add a warning in the response later
+            }
+            
+            // Trim to avoid token limits (Llama 3.1 8B has ~8K context)
+            const maxChars = 6000
+            if (cvText.length > maxChars) {
+                cvText = cvText.substring(0, maxChars) + '\n...[CV truncated due to length]'
+            }
+            
+        } catch (pdfError) {
+            console.error('PDF extraction error:', pdfError)
+            return res.status(400).json({ 
+                message: 'Could not read PDF. Make sure it has selectable text (not a scanned image).' 
+            })
+        }
+
+        // Step 2: Build prompt with ACTUAL CV content
         const prompt = `You are a professional CV reviewer with 10 years of recruitment experience in tech and fintech.
 
-A candidate has submitted their CV for review. Based on general best practices for CV writing and the fact that this is a PDF document submission, provide a thorough review.
+Analyze this CV and provide specific, actionable feedback based on its actual content:
+
+--- CV START ---
+${cvText}
+--- CV END ---
 
 Respond ONLY with a valid JSON object in this exact format, no extra text or markdown:
 {
-  "score": 7,
-  "summary": "One sentence overall assessment",
-  "strengths": ["strength 1", "strength 2", "strength 3"],
-  "weaknesses": ["weakness 1", "weakness 2", "weakness 3"],
-  "improvements": ["specific improvement 1", "specific improvement 2", "specific improvement 3"],
-  "keywords_missing": ["keyword 1", "keyword 2"],
-  "ats_score": 6,
-  "verdict": "One sentence hiring recommendation"
-}`
+  "score": number (0-10, be realistic and specific to this CV),
+  "summary": "One sentence overall assessment specific to this candidate",
+  "strengths": ["specific strength from CV", "another strength", "third strength"],
+  "weaknesses": ["specific weakness from CV", "another weakness", "third weakness"],
+  "improvements": ["actionable improvement 1", "improvement 2", "improvement 3"],
+  "keywords_missing": ["keyword missing from this CV", "another missing keyword"],
+  "ats_score": number (0-10, how ATS-friendly is this specific CV),
+  "verdict": "One sentence hiring recommendation based on this specific CV"
+}
 
+Important: Base your feedback on the ACTUAL CV content above, not generic advice. Reference specific skills, jobs, or sections from the CV.`
+
+        // Step 3: Call Groq with the CV content
         const response = await fetch(
             'https://api.groq.com/openai/v1/chat/completions',
             {
@@ -40,7 +73,7 @@ Respond ONLY with a valid JSON object in this exact format, no extra text or mar
                     messages: [
                         {
                             role: 'system',
-                            content: 'You are a professional CV reviewer. Always respond with valid JSON only.'
+                            content: 'You are a professional CV reviewer. Always respond with valid JSON only. Base your feedback on the actual CV content provided.'
                         },
                         {
                             role: 'user',
@@ -48,7 +81,7 @@ Respond ONLY with a valid JSON object in this exact format, no extra text or mar
                         }
                     ],
                     temperature: 0.3,
-                    max_tokens: 800
+                    max_tokens: 1200
                 })
             }
         )
@@ -68,13 +101,24 @@ Respond ONLY with a valid JSON object in this exact format, no extra text or mar
 
         if(!text) return res.status(500).json({ message: 'No response from reviewer' })
 
+        // Clean and parse JSON
         const clean = text.replace(/```json|```/g, '').trim()
         const parsed = JSON.parse(clean)
+        
+        // Add a warning if text extraction was poor (optional)
+        if (cvText.length < 100) {
+            parsed._warning = "PDF had limited extractable text. For best results, use a PDF with selectable text (not a scanned image)."
+        }
+        
         res.json(parsed)
 
     } catch(error) {
         console.warn('review route error:', error.message)
-        res.status(500).json({ message: 'Something went wrong' })
+        // More detailed error for debugging
+        if (error instanceof SyntaxError) {
+            return res.status(500).json({ message: 'Failed to parse AI response. Please try again.' })
+        }
+        res.status(500).json({ message: 'Something went wrong. Please try again.' })
     }
 })
 

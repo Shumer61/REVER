@@ -1,6 +1,6 @@
 # REVER — AI CV Reviewer
 
-Upload your CV and get instant structured feedback powered by Google Gemini. Built for job seekers who want honest, specific and actionable insight on their CV before sending it out.
+Upload your CV and get instant structured feedback powered by GROQ's llama-3.1-8b-instant. Built for job seekers who want honest, specific and actionable insight on their CV before sending it out.
 
 ## Live
 https://rever-xi.vercel.app/
@@ -19,7 +19,7 @@ You upload a PDF CV. Gemini reads it and returns:
 
 ## Built With
 - React (Vite)
-- Google Gemini 2.5 Flash API
+- GROQ's llama-3.1-8b-instant
 - PDF base64 encoding via FileReader API
 - CSS with glassmorphism
 - Deployed on Vercel
@@ -27,11 +27,10 @@ You upload a PDF CV. Gemini reads it and returns:
 ## Architecture
 - Frontend: React (Vite) — deployed on Vercel
 - Backend: Node.js + Express — deployed on Render
-- The Gemini API call happens server-side so the API key is never exposed to the browser
+- The GROQ API call happens server-side so the API key is never exposed to the browser
 
 ## How It Works
-
-The CV is read client-side using the FileReader API and converted to base64. That base64 data is sent directly to the Gemini API alongside a structured prompt instructing the model to return JSON only. The response is parsed and rendered into the feedback UI.
+ PDF is read using the FileReader API and converted to base64. Base64 is then converted to buffer and text is extracted using pdf-parse. Extracted CV text is sent to Groq's Llama 3.1 model with a structured prompt, AI returns JSON with specific, actionable feedback based on the actual CV content ,feedback is parsed and rendered in the UI with glassmorphism styling
 
 No CV data is stored anywhere. Everything happens in the browser session.
 
@@ -46,14 +45,14 @@ npm run dev
 
 Create `client/.env`:
 ```
-VITE_GEMINI_KEY=your_gemini_api_key
+VITE_URL_KEY=my localhost url
 ```
 
-Get a free API key at aistudio.google.com.
+Get a free API key at cosole.groq.com
 
 ## Limitations
 
-- Free tier Gemini has rate limits — if you hit a limit wait a minute and try again
+- Free tier GROQ has rate limits — if you hit a limit wait a minute and try again
 - PDF only, max 5MB
 - CV data is not stored — refresh clears the results
 

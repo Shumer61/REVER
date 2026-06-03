@@ -1,6 +1,7 @@
 const express = require('express')
 const router = express.Router()
-const pdf = require('pdf-parse')
+// Fix: Proper way to import pdf-parse
+const pdfParse = require('pdf-parse')
 
 router.post('/', async (req, res) => {
     try {
@@ -14,13 +15,13 @@ router.post('/', async (req, res) => {
         let cvText = ''
         try {
             const pdfBuffer = Buffer.from(base64, 'base64')
-            const pdfData = await pdf(pdfBuffer)
+            // Fix: Call pdfParse as a function with the buffer
+            const pdfData = await pdfParse(pdfBuffer)
             cvText = pdfData.text
             
             // Check if we got meaningful text
             if (!cvText || cvText.trim().length < 50) {
                 console.warn('PDF text extraction returned very little content. Length:', cvText?.length)
-                // Continue anyway, but add a warning in the response later
             }
             
             // Trim to avoid token limits (Llama 3.1 8B has ~8K context)
@@ -28,6 +29,8 @@ router.post('/', async (req, res) => {
             if (cvText.length > maxChars) {
                 cvText = cvText.substring(0, maxChars) + '\n...[CV truncated due to length]'
             }
+            
+            console.log(`Successfully extracted ${cvText.length} characters from PDF`)
             
         } catch (pdfError) {
             console.error('PDF extraction error:', pdfError)
@@ -105,7 +108,7 @@ Important: Base your feedback on the ACTUAL CV content above, not generic advice
         const clean = text.replace(/```json|```/g, '').trim()
         const parsed = JSON.parse(clean)
         
-        // Add a warning if text extraction was poor (optional)
+        // Add a warning if text extraction was poor
         if (cvText.length < 100) {
             parsed._warning = "PDF had limited extractable text. For best results, use a PDF with selectable text (not a scanned image)."
         }
@@ -113,7 +116,7 @@ Important: Base your feedback on the ACTUAL CV content above, not generic advice
         res.json(parsed)
 
     } catch(error) {
-        console.warn('review route error:', error.message)
+        console.error('review route error:', error.message)
         // More detailed error for debugging
         if (error instanceof SyntaxError) {
             return res.status(500).json({ message: 'Failed to parse AI response. Please try again.' })
